@@ -10,7 +10,7 @@ from sqlalchemy import insert, Select, Sequence
 from sqlmodel import Session, select, SQLModel
 
 import dependency
-from model.model import StagingRevisionSchema, ProductionRevisionSchema, VersionSchema, SnapshotModel
+from model.model import StagingRevisionSchema, ProductionRevisionSchema, VersionSchema, SnapshotModel, RevisionSchema
 from routes.users import get_current_user, verify_administrator
 
 load_dotenv()
@@ -385,7 +385,7 @@ def list_app(token: Annotated[str, Depends(get_current_user)], name: str | None 
 
 
 # List revision data (not decoded) for a specific app and its environments
-@router.get('/xc/app/{app_name}/{environment}', response_model=list[VersionSchema],
+@router.get('/xc/app/{app_name}/{environment}', response_model=list[RevisionSchema],
             description='Show full configuration for a specific Load Balancer')
 def show_app_details(token: Annotated[str, Depends(get_current_user)], app_name: str, environment: str,
                      ):

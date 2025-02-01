@@ -31,6 +31,24 @@ class VersionSchema(SQLModel, table=True):
     current_version: int
 
 
+class RevisionSchema(BaseModel):
+    uid: str = Field(default=None, primary_key=True)
+    app_name: str
+    original_app_name: str
+    generated_by: str
+    version: int
+    timestamp: int
+    lb_resource_version: int
+    waf_resource_version: int
+    origin_resource_version: int
+    lb_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    waf_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    origin_config: list[Dict] = Field(default_factory=list[dict], sa_column=Column(JSON))
+    bot_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    ddos_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+
 class StagingRevisionSchema(SQLModel, table=True):
     __tablename__ = 'tb_staging'
     uid: str = Field(default=None, primary_key=True)
