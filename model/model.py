@@ -1,28 +1,36 @@
-import os
 from typing import Dict
 
-from dotenv import load_dotenv
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
+
 
 class GenericResponse(BaseModel):
     result: str
 
+
+class SnapshotContents(BaseModel):
+    name: str
+    new_version: int
+    previous_version: int | None = None
+
+
 class SnapshotValueModel(BaseModel):
-    new_prod: int
-    new_staging: int
-    update_prod: int
-    update_staging: int
+    new_prod: list[SnapshotContents] | None = None
+    new_staging: list[SnapshotContents] | None = None
+    update_prod: list[SnapshotContents] | None = None
+    update_staging: list[SnapshotContents] | None = None
 
 
 class SnapshotModel(BaseModel):
     result: str
-    value: SnapshotValueModel | None = None
+    http_lb: SnapshotValueModel | None = None
+    tcp_lb: SnapshotValueModel | None = None
+    cdn_lb: SnapshotValueModel | None = None
 
 
-class VersionSchema(SQLModel, table=True):
-    __tablename__ = 'tb_version'
+class HttpLBVersionSchema(SQLModel, table=True):
+    __tablename__ = 'tb_http_lb_version'
     uid: str | None = Field(default=None, primary_key=True)
     app_name: str
     original_app_name: str
@@ -31,12 +39,13 @@ class VersionSchema(SQLModel, table=True):
     current_version: int
 
 
-class RevisionSchema(BaseModel):
+class HttpLbRevisionSchema(BaseModel):
     uid: str = Field(default=None, primary_key=True)
     app_name: str
     original_app_name: str
     generated_by: str
     version: int
+    previous_version: int | None = None
     timestamp: int
     lb_resource_version: int
     waf_resource_version: int
@@ -46,16 +55,17 @@ class RevisionSchema(BaseModel):
     origin_config: list[Dict] = Field(default_factory=list[dict], sa_column=Column(JSON))
     bot_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     ddos_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    remarks: str | None = None
 
 
-
-class StagingRevisionSchema(SQLModel, table=True):
-    __tablename__ = 'tb_staging'
+class HttpLbStagingRevisionSchema(SQLModel, table=True):
+    __tablename__ = 'tb_http_lb_staging'
     uid: str = Field(default=None, primary_key=True)
     app_name: str
     original_app_name: str
     generated_by: str
     version: int
+    previous_version: int | None = None
     timestamp: int
     lb_resource_version: int
     waf_resource_version: int
@@ -65,15 +75,17 @@ class StagingRevisionSchema(SQLModel, table=True):
     origin_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     bot_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     ddos_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    remarks: str | None = None
 
 
-class ProductionRevisionSchema(SQLModel, table=True):
-    __tablename__ = 'tb_production'
+class HttpLbProductionRevisionSchema(SQLModel, table=True):
+    __tablename__ = 'tb_http_lb_production'
     uid: str = Field(default=None, primary_key=True)
     app_name: str
     original_app_name: str
     generated_by: str
     version: int
+    previous_version: int | None = None
     timestamp: int
     lb_resource_version: int
     waf_resource_version: int
@@ -83,76 +95,10 @@ class ProductionRevisionSchema(SQLModel, table=True):
     origin_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     bot_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     ddos_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
+    remarks: str | None = None
 
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-
-class UserToken(BaseModel):
-    username: str
-    full_name: str
-    email: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    role: str
-    user: UserToken
-
-
-class TokenData(BaseModel):
-    username: str | None = None
-
-
-class UserPatch(SQLModel):
-    username: str | None = None
-    crypt: str | None = None
-    full_name: str | None = None
-    organization: str | None = None
-    is_active: bool | None = None
-    email: str | None = None
-    role: str | None = None
-
-
-class UserPost(BaseModel):
-    username: str
-    password: str
-    full_name: str
-    organization: str
-    is_active: bool
-    email: str
-    role: str
-
-
-class UserPublic(SQLModel):
-    username: str
-    full_name: str
-    organization: str
-    is_active: bool
-    email: str
-    registration_date: int
-    registered_by: str
-    role: str
-
-
-class UserSchema(SQLModel, table=True):
-    __tablename__ = 'tb_users'
-    uid: str | None = Field(default=None, primary_key=True)
-    username: str
-    crypt: str
-    full_name: str
-    organization: str
-    is_active: bool
-    email: str
-    registration_date: int
-    registered_by: str
-    role: str
-
-
-class ReplacePolicySchema(BaseModel):
+class ReplaceHttpLbPolicySchema(BaseModel):
     app_name: str
     environment: str
     target_version: int

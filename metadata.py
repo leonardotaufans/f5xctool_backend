@@ -15,7 +15,8 @@ api_metadata = [
     {
         "name": "Replace Version",
         "description": "Replacing (roll forward or back) the currently running version with the stored one. "
-                       "\nThis will also update the database to store the correct _resource\_version_."
+                       "\nThis will also update the database to store the correct _resource_version_."
     }
 ]
 
+compare_version_desc = "Compare two revisions for differences. Left is the _previous_ version while Right is the _target_ version."
