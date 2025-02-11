@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Annotated
 
 import requests
@@ -7,7 +8,9 @@ from starlette import status
 from starlette.responses import Response
 
 import dependency
+from helper import event_type
 from model.http_model import SnapshotModel, SnapshotContents, SnapshotValueModel
+from model.log_stuff_model import EventLogSchema
 from routes.users import verify_administrator
 
 router = APIRouter(prefix='/xc')
@@ -25,6 +28,10 @@ def manual_snapshot(token: Annotated[str, Depends(verify_administrator)], respon
     :rtype: SnapshotModel
     """
     # List all HTTP Load Balancer
+    dependency.log_stuff(
+        EventLogSchema(event_type=event_type.MANUAL_SNAPSHOT, timestamp=int(round(time.time())),
+                       description=f'User {token.username} triggered a snapshot.'
+                       ))
     http_lb_url = f'{os.getenv("XC_URL")}/api/config/namespaces/{os.getenv("XC_NAMESPACE")}/http_loadbalancers?report_fields=string'
     api_token = os.getenv('XC_APITOKEN')
     headers = {"Authorization": f"APIToken {api_token}", "x-volterra-apigw-tenant": f"{os.getenv('XC_TENANT')}",
@@ -79,7 +86,7 @@ def manual_snapshot(token: Annotated[str, Depends(verify_administrator)], respon
                                                             cdn_lb_list=map_lb_cdn)
     dependency.push_cdn_lb_to_db(environment="production", new_data=cdn_new_prd, exist_data=cdn_exist_prd)
     dependency.push_cdn_lb_to_db(environment="staging", new_data=cdn_new_stg, exist_data=cdn_exist_stg)
-    # todo: get CDN and TCP LB and push to DB
+    # todo: get healthcheck and service policy push to DB
     # todo: request a remark from the user after a manual snapshot.
     # If all of them are empty
     http_lb_empty = not http_new_prd and not http_new_stg and not http_exist_prd and not http_exist_stg

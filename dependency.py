@@ -10,15 +10,18 @@ from fastapi import HTTPException
 from sqlalchemy import insert, create_engine
 from sqlmodel import Session, select, SQLModel
 
+from helper import event_type
 from model.cdn_model import CDNLBStagingRevSchema, CDNLBProductionRevSchema, CDNLBVersionSchema
+from model.generic_model import SchedulerModel
 from model.http_model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema
+from model.log_stuff_model import EventLogSchema
 from model.tcp_model import TcpLbStagingRevSchema, TcpLbProductionRevSchema, TcpLbVersionSchema
 
 load_dotenv()
 sql_address = (f'mysql+pymysql://{os.getenv("SQL_USERNAME")}:{os.getenv("SQL_PASSWORD")}@'
                f'{os.getenv("SQL_ADDRESS")}:{int(os.getenv("SQL_PORT"))}/{os.getenv("SQL_DATABASE_NAME")}')
-echo = os.getenv("DEMO") == 1
-engine = create_engine(sql_address, echo=echo)
+echo = os.getenv("DEMO") == "1"
+engine = create_engine(sql_address, echo=False)
 list_rpc = [
     "ves.io.schema.views.http_loadbalancer",
     "ves.io.schema.views.tcp_loadbalancer",
@@ -28,6 +31,20 @@ list_rpc = [
     "ves.io.schema.views."
     "ves.io.schema.healthcheck"
 ]
+
+
+def log_stuff(data: EventLogSchema):
+    with Session(engine) as session:
+        session.add(data)
+        session.commit()
+
+
+def auto_snapshot_pause(status: bool):
+    with Session(engine) as session:
+        stmt = select(SchedulerModel).where(SchedulerModel.id == 1)
+        schedule: SchedulerModel = session.exec(stmt).first()
+        schedule.is_started = status
+        session.commit()
 
 
 def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_data: list | None = None):
@@ -47,6 +64,13 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
         with Session(engine) as session:
             session.exec(statement=insert(q1), params=new_data)
             for each in new_data:
+                log_stuff(
+                    EventLogSchema(event_type=event_type.HTTP_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for a new HTTP Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   target_version=each['version']
+                                   ))
                 new_app_name: str = each['app_name'].replace('-staging', '').replace('-production', '')
                 ins: HttpLBVersionSchema = HttpLBVersionSchema(
                     uid=generate_uid(uid_type='app', app_name=each['app_name'], environment=environment,
@@ -59,6 +83,7 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
                 )
                 session.add(ins)
             session.commit()
+
     if exist_data:
         with Session(engine) as session:
             session.exec(statement=insert(q1), params=exist_data)
@@ -68,6 +93,14 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
                         HttpLBVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
+                log_stuff(
+                    EventLogSchema(event_type=event_type.HTTP_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for an existing HTTP Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   previous_version=each['previous_version'],
+                                   target_version=each['version']
+                                   ))
 
 
 def push_tcp_lb_to_db(environment: str, new_data: list | None = None, exist_data: list | None = None):
@@ -100,6 +133,13 @@ def push_tcp_lb_to_db(environment: str, new_data: list | None = None, exist_data
                     current_version=1
                 )
                 session.add(ins)
+                log_stuff(
+                    EventLogSchema(event_type=event_type.TCP_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for a new TCP Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   target_version=each['version']
+                                   ))
             session.commit()
     if exist_data:
         with Session(engine) as session:
@@ -112,6 +152,14 @@ def push_tcp_lb_to_db(environment: str, new_data: list | None = None, exist_data
                         TcpLbVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
+                log_stuff(
+                    EventLogSchema(event_type=event_type.TCP_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for an existing TCP Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   previous_version=each['previous_version'],
+                                   target_version=each['version']
+                                   ))
 
 
 def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data: list | None = None):
@@ -144,6 +192,13 @@ def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data
                     environment=environment,
                     current_version=1)
                 session.add(ins)
+                log_stuff(
+                    EventLogSchema(event_type=event_type.CDN_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for a new CDN Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   target_version=each['version']
+                                   ))
             session.commit()
     if exist_data:
         with Session(engine) as session:
@@ -156,6 +211,14 @@ def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data
                         CDNLBVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
+                log_stuff(
+                    EventLogSchema(event_type=event_type.CDN_SNAPSHOT, timestamp=int(round(time.time())),
+                                   description=f'User {q1.generated_by} '
+                                               f'created a new snapshot for an existing CDN Load Balancer '
+                                               f'{new_app_name} on environment {environment}.',
+                                   previous_version=each['previous_version'],
+                                   target_version=each['version']
+                                   ))
 
 
 def get_model_dict(models: SQLModel):

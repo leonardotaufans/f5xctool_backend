@@ -33,6 +33,8 @@ def access_db():
         stmt = session.exec(select(SchedulerModel)).first()
         if stmt.scheduled_time == 0:
             return
+        if stmt.is_started:
+            return
         elif stmt.scheduled_time > current:
             if os.getenv("DEMO") == 1: print(f"Scheduler in {stmt.scheduled_time - current}")
         else:

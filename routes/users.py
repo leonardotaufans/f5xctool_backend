@@ -7,7 +7,7 @@ from typing import Annotated
 import bcrypt
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, HTTPException, APIRouter
+from fastapi import Depends, HTTPException, APIRouter, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
@@ -17,7 +17,9 @@ from sqlmodel import Session, select
 from starlette import status
 
 import dependency
+from helper import event_type
 from model.http_model import GenericResponse
+from model.log_stuff_model import EventLogSchema
 from model.user_model import UserSchema, TokenData, Token, UserToken, UserPublic, UserPatch, UserPost
 
 load_dotenv()
@@ -104,7 +106,8 @@ async def refresh_token(token: Annotated[str, Depends(oauth2_scheme)]) -> Token:
     try:
         payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=[os.getenv("ALGORITHM")])
         print(payload.values())
-        token = create_access_token(data={"sub": payload.get("sub")}, expires_delta=timedelta(minutes=120)) #todo: change to 15
+        token = create_access_token(data={"sub": payload.get("sub")},
+                                    expires_delta=timedelta(minutes=120))  # todo: change to 15
         user: UserSchema = await get_current_user(token)
         print(user)
         return Token(access_token=token, token_type="bearer", role=user.role,
@@ -152,9 +155,11 @@ async def verify_administrator(current_user: Annotated[UserSchema, Depends(get_c
 
 
 @router.post('/mgmt/login', tags=['Login'], response_model=Token)
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> Token:
+async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+                                 background_tasks: BackgroundTasks) -> Token:
     """
     Login to receive an access token.
+    :param background_tasks:
     :param form_data: Takes a form data of Username and Password
     :type form_data: OAuth2PasswordRequestForm
     :return: JWT Token used to authenticate the user
@@ -163,10 +168,14 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     """
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
+        background_tasks.add_task(dependency.log_stuff(
+            data=EventLogSchema(event_type='user', timestamp=int(round(time.time())),
+                                description=f'{form_data.username} failed to login.')))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
     access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")))
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
+
     return Token(access_token=access_token, token_type="bearer", role=user.role,
                  user=UserToken(username=user.username, full_name=user.full_name, email=user.email))
 
@@ -196,7 +205,6 @@ def list_users(token: Annotated[str, Depends(verify_administrator)], username: s
     :rtype: list[UserSchema]
     """
     with (Session(engine) as session):
-
         statement: Select = select(UserSchema)
         if username:
             statement = statement.where(UserSchema.username == username)
@@ -205,9 +213,10 @@ def list_users(token: Annotated[str, Depends(verify_administrator)], username: s
 
 
 @router.post("/mgmt/users", status_code=status.HTTP_201_CREATED, response_model=GenericResponse)
-def create_user(token: Annotated[str, Depends(verify_administrator)], user_form: UserPost):
+def create_user(token: Annotated[str, Depends(verify_administrator)], user_form: UserPost, task: BackgroundTasks):
     """
     Create a new user. Currently without any email validation support.
+    :param task:
     :param token: Lock this function only for administrator.
     :param user_form: Form of user that will be created (username, email, password, etc.)
     :return: A generic 201 Created Response
@@ -236,14 +245,18 @@ def create_user(token: Annotated[str, Depends(verify_administrator)], user_form:
         session.exec(statement)
         session.add(new_user)
         session.commit()
+    task.add_task(dependency.log_stuff(
+        EventLogSchema(event_type=event_type.USER, timestamp=int(round(time.time())),
+                       description=f'User {user_form.username} has been created.')))
     return {"result": "ok"}
 
 
 # Update user data
 @router.patch("/mgmt/users", status_code=status.HTTP_200_OK)
-def update_user_data(token: Annotated[str, Depends(get_current_user)], form: UserPatch):
+def update_user_data(token: Annotated[str, Depends(get_current_user)], form: UserPatch, task: BackgroundTasks):
     """
     Update the user data. Changing username is not supported.
+    :param task:
     :param token: Verify if user are modifying their own data or if user has admin privileges.
     :param form: Data that needs to be patched.
     :return:
@@ -267,7 +280,10 @@ def update_user_data(token: Annotated[str, Depends(get_current_user)], form: Use
         update_query = update(UserSchema).where(UserSchema.username == form.username).values(update_user)
         session.exec(update_query)
         session.commit()
-        return {}
+    task.add_task(dependency.log_stuff(
+        EventLogSchema(event_type=event_type.USER, timestamp=int(round(time.time())),
+                       description=f'User {form.username} updated their data.')))
+    return {}
 
 
 # Check if token is valid

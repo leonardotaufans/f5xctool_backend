@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Annotated
 
 from deepdiff import DeepDiff
@@ -10,8 +11,10 @@ from starlette import status
 
 import dependency
 import metadata
+from helper import event_type
 from model.http_model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema, \
     HttpLbRevisionSchema, ReplaceHttpLbPolicySchema
+from model.log_stuff_model import EventLogSchema
 from routes.users import get_current_user, verify_administrator
 
 load_dotenv()
@@ -23,8 +26,7 @@ engine = dependency.engine
 @router.get('/', description='List HTTP Load Balancers', response_model=list[HttpLBVersionSchema])
 def list_app(token: Annotated[str, Depends(get_current_user)], name: str | None = None, environment: str | None = None,
              version: int | None = None):
-    # print(f'Request token: {token}')
-    # print(f'Request:')
+    dependency.auto_snapshot_pause(True)  # Pause auto snapshot
     with (Session(engine) as session):
         statement = select(HttpLBVersionSchema).order_by(HttpLBVersionSchema.current_version)
         if name:
@@ -56,7 +58,8 @@ def show_http_lb_details(token: Annotated[str, Depends(get_current_user)], app_n
                 HttpLbStagingRevisionSchema.app_name == app_name).order_by(HttpLbStagingRevisionSchema.version.desc())
         elif environment == "production":
             statement = select(HttpLbProductionRevisionSchema).where(
-                HttpLbProductionRevisionSchema.app_name == app_name).order_by(HttpLbProductionRevisionSchema.version.desc())
+                HttpLbProductionRevisionSchema.app_name == app_name).order_by(
+                HttpLbProductionRevisionSchema.version.desc())
         else:
             raise HTTPException(status_code=400, detail="Bad environment syntax. Options: (staging | production)")
 
@@ -72,6 +75,7 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
     else:
         revision_schema = HttpLbProductionRevisionSchema
     with Session(engine) as session:
+        old_version: int
         ver_schema: HttpLBVersionSchema = session.exec(
             select(HttpLBVersionSchema).where(HttpLBVersionSchema.app_name == form.app_name).where(
                 HttpLBVersionSchema.environment == form.environment)).first()
@@ -82,6 +86,7 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
         if ver_schema.current_version == form.target_version:
             return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                  detail=f"{form.app_name} on {form.environment} is already running on version {form.target_version}")
+        old_version = ver_schema.current_version
     with Session(engine) as session:
         # Get revision schema of the target version
         revision: revision_schema = session.exec(
@@ -157,6 +162,15 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
         ver_schema.current_version = form.target_version
         session.commit()
         session.refresh(ver_schema)
+    dependency.log_stuff(
+        EventLogSchema(event_type=event_type.HTTP_REPLACE, timestamp=int(round(time.time())),
+                       description=f'User {token.username} '
+                                   f'replaced the version of an HTTP Load Balancer '
+                                   f'{form.app_name} on environment {form.environment}.',
+                       target_version=form.target_version,
+                       previous_version=old_version
+                       ))
+    dependency.auto_snapshot_pause(False)
     return {}
 
 

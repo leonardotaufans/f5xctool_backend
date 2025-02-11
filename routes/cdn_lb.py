@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Annotated
 
 from deepdiff import DeepDiff
@@ -10,8 +11,10 @@ from starlette import status
 
 import dependency
 import metadata
+from helper import event_type
 from model.cdn_model import CDNLBVersionSchema, CDNLBRevisionSchema, CDNLBStagingRevSchema, CDNLBProductionRevSchema, \
     ReplaceCDNLbPolicySchema
+from model.log_stuff_model import EventLogSchema
 from routes.users import get_current_user, verify_administrator
 
 load_dotenv()
@@ -66,7 +69,8 @@ def show_http_lb_details(token: Annotated[str, Depends(get_current_user)], app_n
 
 @router.post('/replace-version', tags=['Replace Version'])
 def replace_version(token: Annotated[str, Depends(verify_administrator)],
-                    form: ReplaceCDNLbPolicySchema):  # todo: add security
+                    form: ReplaceCDNLbPolicySchema):
+    dependency.auto_snapshot_pause(True)
     if form.environment == "staging":
         revision_schema = CDNLBStagingRevSchema
     else:
@@ -82,6 +86,7 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
         if ver_schema.current_version == form.target_version:
             return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                  detail=f"{form.app_name} on {form.environment} is already running on version {form.target_version}")
+    old_version = ver_schema.current_version
     with Session(engine) as session:
         # Get revision schema of the target version
         revision: revision_schema = session.exec(
@@ -158,6 +163,15 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
         ver_schema.current_version = form.target_version
         session.commit()
         session.refresh(ver_schema)
+    dependency.log_stuff(
+        EventLogSchema(event_type=event_type.CDN_REPLACE, timestamp=int(round(time.time())),
+                       description=f'User {token.username} '
+                                   f'replaced the version of a CDN Load Balancer '
+                                   f'{form.app_name} on environment {form.environment}.',
+                       target_version=form.target_version,
+                       previous_version=old_version
+                       ))
+    dependency.auto_snapshot_pause(False)
     return {}
 
 
