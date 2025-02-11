@@ -11,7 +11,7 @@ from sqlalchemy import insert, create_engine
 from sqlmodel import Session, select, SQLModel
 
 from model.cdn_model import CDNLBStagingRevSchema, CDNLBProductionRevSchema, CDNLBVersionSchema
-from model.model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema
+from model.http_model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema
 from model.tcp_model import TcpLbStagingRevSchema, TcpLbProductionRevSchema, TcpLbVersionSchema
 
 load_dotenv()
@@ -19,6 +19,15 @@ sql_address = (f'mysql+pymysql://{os.getenv("SQL_USERNAME")}:{os.getenv("SQL_PAS
                f'{os.getenv("SQL_ADDRESS")}:{int(os.getenv("SQL_PORT"))}/{os.getenv("SQL_DATABASE_NAME")}')
 echo = os.getenv("DEMO") == 1
 engine = create_engine(sql_address, echo=echo)
+list_rpc = [
+    "ves.io.schema.views.http_loadbalancer",
+    "ves.io.schema.views.tcp_loadbalancer",
+    "ves.io.schema.views.cdn_loadbalancer"
+    "ves.io.schema.app_firewall",
+    "ves.io.schema.views.origin_pool",
+    "ves.io.schema.views."
+    "ves.io.schema.healthcheck"
+]
 
 
 def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_data: list | None = None):
@@ -143,7 +152,7 @@ def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data
             # Update Version table
             for each in exist_data:
                 query = session.exec(
-                    select(CDNLBVersionSchema).where(CDNLBVersionSchema.tcp_lb_name == each['cdn_lb_name']).where(
+                    select(CDNLBVersionSchema).where(CDNLBVersionSchema.cdn_lb_name == each['cdn_lb_name']).where(
                         CDNLBVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
@@ -363,7 +372,11 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
             exist_dict['waf_resource_version'] = firewall['resource_version']
         else:
             waf_value = get_revision_schema.waf_config
-            exist_dict['waf_resource_version'] = get_revision_schema.waf_config['resource_version']
+            if 'resource_version' in get_revision_schema.waf_config:
+                exist_dict['waf_resource_version'] = get_revision_schema.waf_config['resource_version']
+            else:
+                exist_dict['waf_resource_version'] = 0
+            # exist_dict['waf_resource_version'] = get_revision_schema.waf_config['resource_version']
         with Session(engine) as session:
             stmt = select(q1).where(
                 q1.app_name == __xc_app_name_no_env__).order_by(q1.version.desc())
@@ -780,7 +793,7 @@ def get_cdn_lb_data(namespace: str, environment: str, cdn_lb_list: list, usernam
             exist_dict['waf_resource_version'] = get_revision_schema.waf_config['resource_version']
         with Session(engine) as session:
             stmt = select(q1).where(
-                q1.tcp_lb_name == __xc_app_name_no_env__).order_by(q1.version.desc())
+                q1.cdn_lb_name == __xc_app_name_no_env__).order_by(q1.version.desc())
             get_ver = session.exec(stmt).first()
             print(f"{__xc_app_name_no_env__} highest version: {get_ver.version}")
             if not get_ver:

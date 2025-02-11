@@ -7,7 +7,7 @@ from starlette import status
 from starlette.responses import Response
 
 import dependency
-from model.model import SnapshotModel, SnapshotContents, SnapshotValueModel
+from model.http_model import SnapshotModel, SnapshotContents, SnapshotValueModel
 from routes.users import verify_administrator
 
 router = APIRouter(prefix='/xc')

@@ -17,7 +17,7 @@ from sqlmodel import Session, select
 from starlette import status
 
 import dependency
-from model.model import GenericResponse
+from model.http_model import GenericResponse
 from model.user_model import UserSchema, TokenData, Token, UserToken, UserPublic, UserPatch, UserPost
 
 load_dotenv()

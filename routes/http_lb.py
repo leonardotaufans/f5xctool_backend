@@ -10,7 +10,7 @@ from starlette import status
 
 import dependency
 import metadata
-from model.model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema, \
+from model.http_model import HttpLbStagingRevisionSchema, HttpLbProductionRevisionSchema, HttpLBVersionSchema, \
     HttpLbRevisionSchema, ReplaceHttpLbPolicySchema
 from routes.users import get_current_user, verify_administrator
 
