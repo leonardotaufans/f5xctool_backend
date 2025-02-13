@@ -55,7 +55,7 @@ class HttpLbRevisionSchema(BaseModel):
     origin_config: list[Dict] = Field(default_factory=list[dict], sa_column=Column(JSON))
     bot_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
     ddos_config: Dict = Field(default_factory=dict, sa_column=Column(JSON))
-    remarks: str | None = None
+    remarks: str | None = "System generated"
 
 
 class HttpLbStagingRevisionSchema(SQLModel, table=True):

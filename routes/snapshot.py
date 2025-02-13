@@ -4,20 +4,27 @@ from typing import Annotated
 
 import requests
 from fastapi import APIRouter, HTTPException, Depends
+from sqlmodel import select, SQLModel, Session
 from starlette import status
 from starlette.responses import Response
 
 import dependency
-from helper import event_type
-from model.http_model import SnapshotModel, SnapshotContents, SnapshotValueModel
+from dependency import engine, log_stuff
+from helper import event_type, environments, lb_types
+from model.cdn_model import CDNLBProductionRevSchema, CDNLBStagingRevSchema
+from model.generic_model import SnapRemarksUid
+from model.http_model import SnapshotModel, SnapshotContents, SnapshotValueModel, HttpLbProductionRevisionSchema, \
+    HttpLbStagingRevisionSchema
 from model.log_stuff_model import EventLogSchema
+from model.tcp_model import TcpLbProductionRevSchema, TcpLbStagingRevSchema
+from model.user_model import UserSchema
 from routes.users import verify_administrator
 
-router = APIRouter(prefix='/xc')
+router = APIRouter(prefix='/xc', tags=['Snapshot'])
 
 
 # Start Snapshot
-@router.post('/snapshot/now', status_code=201, tags=['Manual Snapshot'], response_model=SnapshotModel,
+@router.post('/snapshot/now', status_code=201, response_model=SnapshotModel,
              response_model_exclude_none=True)
 def manual_snapshot(token: Annotated[str, Depends(verify_administrator)], response: Response):
     """
@@ -142,3 +149,39 @@ def list_app_and_version(app_list: list, lb_type: str):
         apps.append(SnapshotContents(name=each[lb_name], new_version=each['version'],
                                      previous_version=each['previous_version']))
     return apps
+
+
+@router.put('/snapshot/remarks')
+def snapshot_remarks_by_uid(query: SnapRemarksUid, token: Annotated[UserSchema, Depends(verify_administrator)]):
+    uid: str = ''
+    name, environment, lb_type = '', '', ''
+    q2: any = SQLModel()
+    uid = query.uid
+    environment = query.environment
+    if query.lb_type not in lb_types.types:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid LB Types')
+    match query.lb_type:
+        case lb_types.http:
+            if environment == environments.production:
+                q2 = HttpLbProductionRevisionSchema
+            else:
+                q2 = HttpLbStagingRevisionSchema
+        case lb_types.tcp:
+            if environment == environments.production:
+                q2 = TcpLbProductionRevSchema
+            else:
+                q2 = TcpLbStagingRevSchema
+        case lb_types.cdn:
+            if environment == environments.production:
+                q2 = CDNLBProductionRevSchema
+            else:
+                q2 = CDNLBStagingRevSchema
+    stmt_uid = select(q2).where(q2.uid == uid)
+    with Session(engine) as session:
+        act = session.exec(stmt_uid).first()
+        act.remarks = query.remarks
+        session.commit()
+        session.refresh(act)
+    log_stuff(EventLogSchema(event_type=event_type.SNAPSHOT, timestamp=int(round(time.time())),
+                             description=f"{token.username} updated the snapshot remarks: {act}"))
+    return {}

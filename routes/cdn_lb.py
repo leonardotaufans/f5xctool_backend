@@ -169,7 +169,8 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
                                    f'replaced the version of a CDN Load Balancer '
                                    f'{form.app_name} on environment {form.environment}.',
                        target_version=form.target_version,
-                       previous_version=old_version
+                       previous_version=old_version,
+                       environment=form.environment
                        ))
     dependency.auto_snapshot_pause(False)
     return {}

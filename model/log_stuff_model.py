@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field
 
+# EventLogSchema(event_type='', timestamp=int(round(time.time())), description='')
 
 class EventLogSchema(SQLModel, table=True):
     __tablename__ = "tb_events"

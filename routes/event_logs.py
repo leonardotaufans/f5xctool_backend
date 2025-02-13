@@ -1,15 +1,18 @@
 import json
 import time
+from typing import Annotated
 
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request, BackgroundTasks, Depends
 from sqlmodel import select, Session
 from starlette import status
 
 import dependency
 from model.generic_model import SchedulerModel
 from model.log_stuff_model import EventLogSchema
+from model.user_model import UserSchema
+from routes.users import get_current_user
 
-router = APIRouter(prefix='/xc/logs')
+router = APIRouter(prefix='/xc/logs', tags=['Event Log Management'])
 engine = dependency.engine
 delay_in_seconds = 300
 
@@ -28,15 +31,21 @@ def snapshot_scheduler():
     print(data.scheduled_time)
 
 
-@router.post('/')
-def test_log(background_tasks: BackgroundTasks):
-    log: EventLogSchema = EventLogSchema(uid="abcdefgh", event_type="test", timestamp=int(round(time.time())),
-                                         description='test log')
-    background_tasks.add_task(dependency.log_stuff, log)
-    return {}
+@router.get('/', description="Get Revision Tool event logs.", response_model=list[EventLogSchema])
+def get_tool_logs(token: Annotated[UserSchema, Depends(get_current_user)]) -> list[EventLogSchema]:
+    """
+    Get Revision Tool event logs.
+    :param token: Lock this endpoint for users only
+    :type token: UserSchema
+    :return: List of Event Logs
+    :rtype: EventLogSchema
+    """
+    with Session(engine) as session:
+        stmt = session.exec(select(EventLogSchema)).all()
+    return stmt
 
 
-@router.post("/audit", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/audit", status_code=status.HTTP_202_ACCEPTED, tags=['XC Audit Log Webhook', 'Snapshot'])
 async def webhook_endpoint(request: Request, background_tasks: BackgroundTasks):
     for each in (await request.body()).decode('utf-8').splitlines():
         print(each)
@@ -44,9 +53,4 @@ async def webhook_endpoint(request: Request, background_tasks: BackgroundTasks):
         if 'rpc' in json_lines and json_lines['rpc'] in dependency.list_rpc:
             background_tasks.add_task(snapshot_scheduler)
             return {}
-    # print(await request.body())
-    # data = await request.json()  # We need to process it like this because XC is sending application/x-ndjson
-    # if 'rpc' in data and data['rpc'] in dependency.list_rpc:
-    #     background_tasks.add_task(snapshot_scheduler)
-    # print(f"Body: {await request.json()}")
     return {"res": "ok"}

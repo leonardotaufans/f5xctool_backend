@@ -167,6 +167,7 @@ def replace_version(token: Annotated[str, Depends(verify_administrator)],
                        description=f'User {token.username} '
                                    f'replaced the version of an HTTP Load Balancer '
                                    f'{form.app_name} on environment {form.environment}.',
+                       environment=form.environment,
                        target_version=form.target_version,
                        previous_version=old_version
                        ))
