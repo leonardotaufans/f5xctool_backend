@@ -1,8 +1,9 @@
 import json
 import time
-from typing import Annotated
+from typing import Annotated, Sequence
 
 from fastapi import APIRouter, Request, BackgroundTasks, Depends
+from sqlalchemy import Select
 from sqlmodel import select, Session
 from starlette import status
 
@@ -18,10 +19,10 @@ delay_in_seconds = 300
 
 
 def snapshot_scheduler():
-    this_time = time.time()
+    this_time = int(round(time.time()))
     data: SchedulerModel
     with Session(engine) as session:
-        stmt = select(SchedulerModel).where(SchedulerModel.id == 1)
+        stmt: Select = select(SchedulerModel).where(SchedulerModel.id == 1)
         sched: SchedulerModel = session.exec(stmt).first()
         data = sched
         print(sched.scheduled_time)
@@ -32,7 +33,7 @@ def snapshot_scheduler():
 
 
 @router.get('/', description="Get Revision Tool event logs.", response_model=list[EventLogSchema])
-def get_tool_logs(token: Annotated[UserSchema, Depends(get_current_user)]) -> list[EventLogSchema]:
+def get_tool_logs(token: Annotated[UserSchema, Depends(get_current_user)]) -> Sequence[EventLogSchema]:
     """
     Get Revision Tool event logs.
     :param token: Lock this endpoint for users only
@@ -41,7 +42,7 @@ def get_tool_logs(token: Annotated[UserSchema, Depends(get_current_user)]) -> li
     :rtype: EventLogSchema
     """
     with Session(engine) as session:
-        stmt = session.exec(select(EventLogSchema)).all()
+        stmt = session.exec(select(EventLogSchema).order_by(EventLogSchema.timestamp.desc())).all()
     return stmt
 
 

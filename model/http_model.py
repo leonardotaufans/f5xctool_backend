@@ -13,6 +13,7 @@ class SnapshotContents(BaseModel):
     name: str
     new_version: int
     previous_version: int | None = None
+    uid: str | None = None
 
 
 class SnapshotValueModel(BaseModel):

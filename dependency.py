@@ -7,7 +7,7 @@ import time
 import requests
 from dotenv import load_dotenv
 from fastapi import HTTPException
-from sqlalchemy import insert, create_engine
+from sqlalchemy import insert, create_engine, Select
 from sqlmodel import Session, select, SQLModel
 
 from helper import event_type
@@ -64,6 +64,7 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
         with Session(engine) as session:
             session.exec(statement=insert(q1), params=new_data)
             for each in new_data:
+                new_app_name: str = each['app_name'].replace('-staging', '').replace('-production', '')
                 log_stuff(
                     EventLogSchema(event_type=event_type.HTTP_SNAPSHOT, timestamp=int(round(time.time())),
                                    description=f'User {q1.generated_by} '
@@ -71,7 +72,6 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
                                                f'{new_app_name} on environment {environment}.',
                                    target_version=each['version']
                                    ))
-                new_app_name: str = each['app_name'].replace('-staging', '').replace('-production', '')
                 ins: HttpLBVersionSchema = HttpLBVersionSchema(
                     uid=generate_uid(uid_type='app', app_name=each['app_name'], environment=environment,
                                      timestamp=timestamp),
@@ -93,6 +93,7 @@ def push_http_lb_to_db(environment: str, new_data: list | None = None, exist_dat
                         HttpLBVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
+                new_app_name: str = each['app_name'].replace('-staging', '').replace('-production', '')
                 log_stuff(
                     EventLogSchema(event_type=event_type.HTTP_SNAPSHOT, timestamp=int(round(time.time())),
                                    description=f'User {q1.generated_by} '
@@ -152,6 +153,8 @@ def push_tcp_lb_to_db(environment: str, new_data: list | None = None, exist_data
                         TcpLbVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
                 session.commit()
+                new_app_name: str = each['tcp_lb_name'].replace('-staging', '').replace('-production', '')
+
                 log_stuff(
                     EventLogSchema(event_type=event_type.TCP_SNAPSHOT, timestamp=int(round(time.time())),
                                    description=f'User {q1.generated_by} '
@@ -182,7 +185,7 @@ def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data
             # Insert LB to Version table
             for each in new_data:
                 new_app_name: str = (each['cdn_lb_name']).replace('-staging', '').replace('-production', '')
-                print(f"cdn db: {each['cdn_lb_name']} {new_app_name}")
+                # print(f"cdn db: {each['cdn_lb_name']} {new_app_name}")
                 ins: CDNLBVersionSchema = CDNLBVersionSchema(
                     uid=generate_uid(uid_type='cdn', app_name=each['cdn_lb_name'], environment=environment,
                                      timestamp=timestamp),
@@ -210,6 +213,8 @@ def push_cdn_lb_to_db(environment: str, new_data: list | None = None, exist_data
                     select(CDNLBVersionSchema).where(CDNLBVersionSchema.cdn_lb_name == each['cdn_lb_name']).where(
                         CDNLBVersionSchema.environment == environment)).first()
                 query.current_version = each['version']
+                new_app_name: str = each['cdn_lb_name'].replace('-staging', '').replace('-production', '')
+
                 session.commit()
                 log_stuff(
                     EventLogSchema(event_type=event_type.CDN_SNAPSHOT, timestamp=int(round(time.time())),
@@ -288,7 +293,7 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
             exist_lb.append(each)
     # Query XC to get the new data
     new_list = []
-    print(exist_lb)
+    # print(exist_lb)
     for new in new_lb:
         app_dict = {}
         get_app_data = _get_http_lb(namespace=namespace, app_name=new)
@@ -363,19 +368,19 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
             get_version_schema = session.exec(
                 select(HttpLBVersionSchema).where(HttpLBVersionSchema.app_name == __xc_app_name_no_env__).where(
                     HttpLBVersionSchema.environment == environment)).first()
-            print(f"tb_ver: {get_version_schema}")
+            # print(f"tb_ver: {get_version_schema}")
             # Get configuration from revisions by specific version
             get_revision_schema = session.exec(select(q1).where(q1.app_name == __xc_app_name_no_env__).where(
                 q1.version == get_version_schema.current_version)).first()
-            print(get_revision_schema)
+            # print(get_revision_schema)
             if not get_revision_schema:
                 print(f"{__xc_app_name_no_env__} missing?")
                 continue
         lb_resource_ver = 0
         if get_revision_schema.lb_resource_version:
             lb_resource_ver = get_revision_schema.lb_resource_version
-        print(
-            f"Current version: {get_version_schema.current_version}, LB resource version: {lb_resource_ver}")
+        # print(
+        #     f"Current version: {get_version_schema.current_version}, LB resource version: {lb_resource_ver}")
         is_lb_latest_in_xc = get_revision_schema.lb_resource_version < int(get_app_data['resource_version'])
         # Check if App Firewall is the latest
         is_waf_latest_in_xc = False
@@ -386,7 +391,7 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
         # Check if origin pool is empty first
         if origin_pool:
             if get_revision_schema.origin_config:
-                print(origin_pool)
+                # print(origin_pool)
                 current_origin_list = {i['resource_version']: i for i in get_revision_schema.origin_config}
                 j: int
                 if len(origin_pool) > len(current_origin_list):
@@ -394,15 +399,15 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
                 else:
                     j = len(current_origin_list)
                 for each in range(j):
-                    print(f"current_origin_list: {origin_pool[each]}")
+                    # print(f"current_origin_list: {origin_pool[each]}")
                     if get_revision_schema.origin_config[each]['replace_form']['metadata']['name'] == \
                             origin_pool[each]['replace_form']['metadata'][
                                 'name'] and get_revision_schema.origin_config[each]['resource_version'] < \
                             origin_pool[each][
                                 'resource_version']:
-                        print(
-                            f"origin_need_update! {get_revision_schema.origin_config[each]['replace_form']['metadata']['name']} to "
-                            f"{origin_pool[each]['resource_version']}")
+                        # print(
+                        #     f"origin_need_update! {get_revision_schema.origin_config[each]['replace_form']['metadata']['name']} to "
+                        #     f"{origin_pool[each]['resource_version']}")
                         is_origin_latest_in_xc = True
                         continue
                 # if origin_pool != current_origin_list:
@@ -410,15 +415,15 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
             else:
                 is_origin_latest_in_xc = True
         # These bool are being summed to check if any is True, and if none of them is being updated, they'll be skipped
-        print(
-            f"app: {__xc_app_name_no_env__}:{environment}, update-lb: {is_lb_latest_in_xc}, update-waf: {is_waf_latest_in_xc}, update_origin: {is_origin_latest_in_xc}")
+        # print(
+        #     f"app: {__xc_app_name_no_env__}:{environment}, update-lb: {is_lb_latest_in_xc}, update-waf: {is_waf_latest_in_xc}, update_origin: {is_origin_latest_in_xc}")
         sum_update = is_lb_latest_in_xc + is_waf_latest_in_xc + is_origin_latest_in_xc
         if sum_update == 0:
             continue
         # Start changing database from here
         # Update LB
         if is_lb_latest_in_xc:
-            print(f"{get_version_schema.app_name} LB requires update")
+            # print(f"{get_version_schema.app_name} LB requires update")
             lb_value = get_app_data
         # If LB is not updated, the db will copy the old one.
         else:
@@ -444,7 +449,7 @@ def get_http_lb_data(namespace: str, environment: str, load_balancer_list: list,
             stmt = select(q1).where(
                 q1.app_name == __xc_app_name_no_env__).order_by(q1.version.desc())
             get_ver = session.exec(stmt).first()
-            print(f"{__xc_app_name_no_env__} highest version: {get_ver.version}")
+            # print(f"{__xc_app_name_no_env__} highest version: {get_ver.version}")
             if not get_ver:
                 print("Get_ver missing???")
 
@@ -513,7 +518,7 @@ def get_tcp_lb_data(namespace: str, environment: str, tcp_lb_list: list, usernam
     if new_lb:
         for new in new_lb:
             app_dict = {}
-            print(f"tcp lb app name to get: {new}")
+            # print(f"tcp lb app name to get: {new}")
             get_app_data = _get_tcp_lb(namespace=namespace, app_name=new)
             app_data = get_app_data["replace_form"]
             print(f"{new} data: {app_data}")

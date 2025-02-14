@@ -101,8 +101,7 @@ def manual_snapshot(token: Annotated[str, Depends(verify_administrator)], respon
     cdn_lb_empty = not cdn_new_prd and not cdn_new_stg and not cdn_exist_prd and not cdn_exist_stg
 
     if http_lb_empty and tcp_lb_empty and cdn_lb_empty:
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return {"result": "No updates found"}
+        return SnapshotModel(result='No updates found')
 
     snapshot_http_new_prd = list_app_and_version(app_list=http_new_prd, lb_type='http')
     snapshot_http_exist_prd = list_app_and_version(http_exist_prd, lb_type='http')
@@ -145,17 +144,18 @@ def list_app_and_version(app_list: list, lb_type: str):
     else:
         lb_name = "app_name"
     apps: list[SnapshotContents] = []
+
     for each in app_list:
         apps.append(SnapshotContents(name=each[lb_name], new_version=each['version'],
-                                     previous_version=each['previous_version']))
+                                     previous_version=(
+                                         each['previous_version']) if 'previous_version' in each else None))
     return apps
 
 
 @router.put('/snapshot/remarks')
 def snapshot_remarks_by_uid(query: SnapRemarksUid, token: Annotated[UserSchema, Depends(verify_administrator)]):
-    uid: str = ''
     name, environment, lb_type = '', '', ''
-    q2: any = SQLModel()
+    print(query.lb_type)
     uid = query.uid
     environment = query.environment
     if query.lb_type not in lb_types.types:
@@ -176,12 +176,48 @@ def snapshot_remarks_by_uid(query: SnapRemarksUid, token: Annotated[UserSchema, 
                 q2 = CDNLBProductionRevSchema
             else:
                 q2 = CDNLBStagingRevSchema
+
     stmt_uid = select(q2).where(q2.uid == uid)
     with Session(engine) as session:
-        act = session.exec(stmt_uid).first()
+        act: q2 = session.exec(stmt_uid).first()
+        print(act)
         act.remarks = query.remarks
         session.commit()
         session.refresh(act)
+    dump = act.model_dump()
+    name = ''
+    if 'app_name' in dump:
+        print('app_name')
+        name = dump['app_name']
+    elif 'tcp_lb_name' in dump:
+        print('tcp_lb_name')
+        name = dump['tcp_lb_name']
+    elif 'cdn_lb_name' in dump:
+        print('cdn_lb_name')
+        name = dump['cdn_lb_name']
     log_stuff(EventLogSchema(event_type=event_type.SNAPSHOT, timestamp=int(round(time.time())),
-                             description=f"{token.username} updated the snapshot remarks: {act}"))
+                             environment=environment,
+                             target_version=act.version,
+                             description=f"{token.username} updated the snapshot remarks: {name}"), )
     return {}
+
+
+@router.put('/snapshot/remarks/demo')
+def snapshot_remarks_demo(query: SnapRemarksUid):
+    print(query)
+    return {}
+
+
+@router.post('/snapshot/now/demo')
+def snapshot_demo():
+    exist_model: SnapshotModel = SnapshotModel(
+        result="Updates found",
+        tcp_lb=SnapshotValueModel(
+            new_prod=[
+                SnapshotContents(name='vs-1', uid='cmV2X3RjcC1rc3QtcHJvZHVjdGlvbi1wcm9kdWN0aW9uX3YxXzE3Mzg3MzY1ODI=',
+                                 new_version=999),
+                SnapshotContents(name='vs-2', uid='12345679', new_version=1)],
+        )
+    )
+    empty_model = SnapshotModel(result='No updates found')
+    return exist_model

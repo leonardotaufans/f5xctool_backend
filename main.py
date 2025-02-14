@@ -63,7 +63,8 @@ async def lifespan(app: FastAPI):
 
 
 def create_app():
-    api = FastAPI(lifespan=lifespan, openapi_tags=metadata.api_metadata, title='F5 XC Tool API', debug=True)
+    api = FastAPI(lifespan=lifespan, openapi_tags=metadata.api_metadata, title='F5 XC Revision Tool API', debug=True,
+                  version="0.4")
     # todo: update to allow the correct address
     api.add_middleware(CORSMiddleware, allow_origins=['http://localhost', 'http://localhost:25000'],
                        allow_credentials=True, allow_methods=["*"], allow_headers=['*'])
